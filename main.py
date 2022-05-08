@@ -2,7 +2,10 @@ import pandas as pd
 import numpy as np
 import os
 import datetime as dt
-
+import numpy as np
+from sklearn import linear_model
+from sklearn.model_selection import train_test_split
+import math
 
 class TakeHomeAssignment:
     """
@@ -56,8 +59,91 @@ class TakeHomeAssignment:
         #Extracting our answer for phase 1
         answers = phase1_result[phase1_result[('SALE_PRICE', 'sum')] ==phase1_result[('SALE_PRICE', 'sum')].max()].reset_index(drop=True)
         print(f"Suburb {answers[('SUBURB', '')][0]} has the highest Total property market value in {year}"
-                     f" with a value of ${answers[('SALE_PRICE', 'sum')][0]}")
+              f" with a value of ${answers[('SALE_PRICE', 'sum')][0]}")
         return phase1_result
+
+    def phase_2(self):
+        """
+
+        :return:
+        """
+        df = self.df
+
+        ## Data Cleansing
+        # Replaceing all NaN values in 'AIRCONDITION', 'BALCONY', 'WARDROBE', 'GARDEN' with False
+        for item in ['AIRCONDITION', 'BALCONY', 'WARDROBE', 'GARDEN']:
+            df[item] = df[item].replace(True, 1)
+            df[item] = df[item].replace(False, 0)
+            df[item].fillna(0, inplace=True)
+
+        # Estimating the number of bedrooms and bathrooms base off the nearest AREASIZE
+        bedroom_index = df[['AREASIZE', 'BEDROOMS']].dropna().reset_index()
+        bathroom_index = df[['AREASIZE', 'BATHS']].dropna().reset_index()
+        def bed_match(row):
+            if math.isnan(row['AREASIZE']):
+                pass
+            elif math.isnan(row['BEDROOMS']):
+                value = row['AREASIZE']
+                index = abs(bedroom_index['AREASIZE'] - value).idxmin()
+                row['BEDROOMS'] = bedroom_index['BEDROOMS'].iloc[index]
+            return row
+
+        def bath_match(row):
+            if math.isnan(row['AREASIZE']):
+                pass
+            elif math.isnan(row['BATHS']):
+                value = row['AREASIZE']
+                index = abs(bathroom_index['AREASIZE'] - value).idxmin()
+                row['BATHS'] = bathroom_index['BATHS'].iloc[index]
+            return row
+        df = df.apply(bed_match, axis=1)
+        df = df.apply(bath_match, axis=1)
+
+        # Removing data where areasize is nan
+        # df = df.loc[(~df['AREASIZE'].isna()) | (~df['ADDRESSLATITUDE'].isna()) | (~df['ADDRESSLONGITUDE'].isna())].reset_index()
+        df = df.dropna(subset=['PROPERTYCATEGORY', 'SUBURB', 'STREETTYPE',
+               'ADDRESSLATITUDE', 'ADDRESSLONGITUDE', 'AREASIZE', 'BEDROOMS', 'BATHS',
+               'PARKING', 'AIRCONDITION', 'BALCONY', 'WARDROBE', 'GARDEN'])
+
+        ## Regression set up
+        # Creating dummy variables for str features
+        df = df[['PROPERTYCATEGORY', 'SUBURB', 'STREETTYPE',
+               'ADDRESSLATITUDE', 'ADDRESSLONGITUDE', 'AREASIZE', 'BEDROOMS', 'BATHS',
+               'PARKING', 'AIRCONDITION', 'BALCONY', 'WARDROBE', 'GARDEN', 'SALE_PRICE']]
+
+        df = pd.get_dummies(df, columns=['PROPERTYCATEGORY', 'SUBURB', 'STREETTYPE'], prefix="dmy", prefix_sep="*")
+
+
+        # seperating df with sales_price data and without it
+        sale_df = df.loc[~df['SALE_PRICE'].isna()].dropna() # Removing nas from the test data set.
+        non_sale_df = df.loc[df['SALE_PRICE'].isna()]
+
+        df_x = sale_df.drop('SALE_PRICE', axis=1)
+
+        df_y = sale_df[['SALE_PRICE']]
+
+        df_x.describe()
+
+        reg = linear_model.LinearRegression()
+
+        x_train, x_test, y_train, y_test = train_test_split(df_x, df_y, test_size=0.33, random_state=4)
+
+        x_train.head()
+
+        reg.fit(x_train, y_train)
+
+        reg.coef_
+
+        reg.predict(x_test)
+
+        # mean square error
+        np.mean((reg.predict(x_test) - y_test) ** 2)
+
+        df['model_predict'] = reg.predict(df.drop('SALE_PRICE', axis=1))
+
+        x = df.groupby("dmy*A").agg({'model_predict': ['sum']}).reset_index()
+
+
 
 if __name__ == '__main__':
     assignment_obj = TakeHomeAssignment()
